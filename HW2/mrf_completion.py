@@ -1,8 +1,9 @@
+import sys
 from scipy import misc
 import numpy as np
 
 V_MAX = 50   #this is the threshold
-ITER_NO = 100
+ITER_NO = 5
 #Since we implemented the log version of the algorithm it is unnecessary to take an exponent
 def fi(xi,xj):
     res = -min(abs(xi-xj),V_MAX)
@@ -14,7 +15,7 @@ FI = np.vectorize(fi)(FI,[i for i in range(256)])
 
 
 class Vertex(object):
-    def __init__(self,index=0,name='',y=None,neighs=None,in_msgs = None,observed=True,normalize_factor=None):
+    def __init__(self,index=0,name='',y=None,neighs=None,in_msgs = None,observed=True):
         self._name = name
         self._y = y # original pixel
         if(neighs == None): neighs = set() # set of neighbour nodes
@@ -23,14 +24,12 @@ class Vertex(object):
         self._in_msgs = in_msgs
         self._observed = observed
         self._i = index
-        #self._normalize_factor = normalize_factor
     def add_neigh(self,vertex):
         self._neighs.add(vertex)
     def rem_neigh(self,vertex):
         self._neighs.remove(vertex)
 
-    #initiaize the message sfrom self to v
-    # TODO: the initialization should be done randomly or a uniform value.
+    #initiaize the messages from self to v
     # source: http://adv-ml-2017.wikidot.com/forum/t-2228406/lbp-for-image-completion
     def init_message(self,v):
         v._in_msgs[self] = [0 for i in range(256)]
@@ -43,7 +42,6 @@ class Vertex(object):
     def calc_log_basic_msg(self,neigh_suggested_val,neigh):
         '''
         Sends message from self to neigh.
-        In this implementation each message is calculated directly from the updated pixel value.
         :return The maximum value we get from equation (2) from the homework.
         '''
         #creating matrix with all the neighbours messages
@@ -62,7 +60,7 @@ class Vertex(object):
     def get_msgs(self,neigh):
         results = np.array([i for i in range(256)])
         results = np.vectorize(self.calc_log_basic_msg)(results,neigh)
-        #We drop the normalization since in this implementation it's unnecessary
+        #We droped the normalization since in this implementation it's unnecessary
         return results
 
     #send message from self to neigh
@@ -70,6 +68,7 @@ class Vertex(object):
         """ Combines messages from all other neighbours
             to propagate a message to the neighbouring Vertex 'neigh'.
         """
+        #in the begining the unobsereved pixels has no messages values, so we didn't want their default messages to have influence
         if not (len(np.append([],list(self._in_msgs.values()))) > 0):
             return
         results = self.get_msgs(neigh)
@@ -221,6 +220,7 @@ def grid2mat(grid,n,m):
 # load image:
 print("Starting test...")
 frame_width = 1
+turn = True
 outfile_name = "Result"
 img_path = "C:\\Users\\Yair Hadas\\Desktop\\שיטות מתקדמות בלמידה חישובית\\Adv-ML-HW\\HW2\\penguin-img.png"
 image = misc.imread(img_path)
@@ -234,9 +234,11 @@ print("loaded image and made a grid from it successfully")
 # process grid:
 for i in range(ITER_NO):
     print("Started run no."+str(i+1))
-
     print("Sending messages...")
+    #We jump from pixels in the top left to the buttom right to the middle, each pixel "asks" from his neighbors to send him messages.
+    #After it recieved it's messages, it's immediately recalculate his pixel value.
     for j in range(n*m):
+        j = m*n-j-1 if turn else j
         v = g.get_vertex(j)
         if (not v._observed):
             print("now vertex-" + str(j) + " receives it's messages")
@@ -244,6 +246,7 @@ for i in range(ITER_NO):
                 neigh.snd_msg(v)
             v.get_belief()
             print("vertex-" + str(j) + " updated it's index value to: " + str(v._y))
+        turn = not turn
     '''
     print("Updating pixels values...")
     for j in range(n*m):
