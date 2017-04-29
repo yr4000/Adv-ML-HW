@@ -1,14 +1,16 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Mar 30 14:35:26 2017
-
-@author: carmonda
-"""
-
-V_MAX = 50   #this is the threshold
-
 from scipy import misc
 import numpy as np
+
+V_MAX = 50   #this is the threshold
+#Since we implemented the log version of the algorithm it is unnecessary to take an exponent
+def fi(xi,xj):
+    res = -min(abs(xi-xj),V_MAX)
+    return res
+
+#Here we create the matrix FI which contains all the possible values of the fi function
+FI = np.array([[j for i in range(256)] for j in range(256)])
+FI = np.vectorize(fi)(FI,[i for i in range(256)])
+
 
 class Vertex(object):
     def __init__(self,index=0,name='',y=None,neighs=None,in_msgs = None,observed=True,normalize_factor=None):
@@ -30,61 +32,66 @@ class Vertex(object):
     # TODO: the initialization should be done randomly or a uniform value.
     # source: http://adv-ml-2017.wikidot.com/forum/t-2228406/lbp-for-image-completion
     def init_message(self,v):
+        v._in_msgs[self] = [0 for i in range(256)]
+        '''
         if(self._observed):
             v._in_msgs[self] = self._y
         else:
             v._in_msgs[self] = 1
+        '''
 
-    #This is formula no.2 in the HW doc
     #source: http://adv-ml-2017.wikidot.com/forum/t-2219436/log-of-the-factors
-    def calc_log_basic_msg(self,neigh,neigh_val):
-        res_for_default_val = None
-        res, temp = 0,0
-        for i in range(256):
-            if(res_for_default_val != None and neigh_val-i<50):
-                temp = res_for_default_val
-            else:
-                temp = np.log(fi(i,neigh_val))
-                for n in self._neighs:
-                    #if(n==neigh):
-                     #   continue
-                    msg = self._in_msgs[n]
-                    temp += np.log(msg)
-                if(res_for_default_val==None and neigh_val-i<50):   #TODO: fix
-                    res_for_default_val = temp
-            if(temp>res or i==0):
-                res = temp
-        return res
+    #TODO: in terms of results seems fine, but not clear about the running time
+    def calc_log_basic_msg(self,neigh_suggested_val,neigh):
+        '''
+        Sends message from self to neigh.
+        In this implementation each message is calculated directly from the updated pixel value.
+        :return The maximum value we get from equation (2) from the homework.
+        '''
+        neighs_vals = [n._y for n in self._neighs]
+        neighs_vals.remove(neigh._y)
+        neighs_vals = np.array(neighs_vals)
+        neighs_vals = neighs_vals[neighs_vals != -1] #containing all the neighs values which are readable and not of neigh itself
+        results = np.array([i for i in range(256)])
 
-    #recalculate the pixels after recieving the messages
-    def get_belief(self):
-        res = 0
-        for i in range(256):
-            temp = 0
-            for n in self._neighs:
-                temp += n._in_msgs(self) #because it's log
-            if(temp > res or i==0):
-                self._y = i
-                res = temp
+        #this is a help function which help us implement equation (2)
+        def inner_msg_calc(i,j):
+            a = [FI[i][neighs_vals[k]] for k in range(len(neighs_vals))]
+            return FI[i][j]+sum(a)
 
+        #calculate for each pixel value equation 2 result
+        results = np.vectorize(inner_msg_calc)(results,neigh_suggested_val)
+        return np.max(results)
 
-    #calculate the message and normalize it
-    def get_msg(self,neigh):
-        #first we calculate res
-        res = self.calc_log_basic_msg(neigh,neigh._y)
-        #then we normalize res
-        normalize_factor = 0
-        for i in range(256):
-            normalize_factor += self.calc_log_basic_msg(neigh,i)
-        res -= np.log(normalize_factor)
-        return res
+    #For each possible neigh value calculate the message from self to neigh
+    def get_msgs(self,neigh):
+        results = np.array([i for i in range(256)])
+        results = np.vectorize(self.calc_log_basic_msg)(results,neigh)
+        #We drop the normalization since in this implementation it's not needed leads to wrong results
+        return results
 
     #send message from self to neigh
+    #TODO: This function might me unnecessary
     def snd_msg(self,neigh):
         """ Combines messages from all other neighbours
             to propagate a message to the neighbouring Vertex 'neigh'.
         """
-        neigh._in_msgs[self] = self.get_msg(neigh)
+        results = self.get_msgs(neigh)
+       # def inner_snd_msg(msg):
+       #     return msg/sum(results)
+       # res = np.vectorize(inner_snd_msg)(results)
+        neigh._in_msgs[self] = results
+
+    #recalculate the pixels after recieving the messages
+    def get_belief(self):
+        '''
+        take all the messages from all the neighs (in this implementation the messages are vectors in size 256)
+        create a matrix from them and updates self's index to that of the collumn with the largest sum.
+        '''
+        neighs_msgs = np.array([self._in_msgs[n] for n in self._neighs]) #this is a matrix at size neighs_noX256
+        results = np.sum(neighs_msgs,axis=0)
+        pix_val = np.argmax(results)
+        self._y = pix_val
 
     def __str__(self):
         ret = "Name: "+self._name
@@ -183,7 +190,8 @@ def build_grid_graph(n,m,img_mat,x1,x2,y1,y2):
     # add vertices:
     for i in range(n*m):
         row,col = (i//m,i%m)
-        v = Vertex(index=i,name="v"+str(i),y=img_mat[row][col],observed = is_observed(row,col,x1,x2,y1,y2))
+        observed = is_observed(row,col,x1,x2,y1,y2)
+        v = Vertex(index=i,name="v"+str(i),y=img_mat[row][col] if observed else -1 ,observed = observed)
         g.add_vertex(v,i)
         if((i%m)!=0): # has left edge
             g.add_edge((v,V[i-1]))
@@ -208,27 +216,6 @@ def grid2mat(grid,n,m):
         mat[row][col] = v._y # you should change this of course
     return mat
 
-#------------------------------------------------------------
-#my code:
-
-def fi(xi,xj):
-    res = np.e**(-min(abs(xi-xj),V_MAX))
-    return res
-
-#given a MRF model retuens the p(x1,...,xn) of pix_arr
-def p(G,pix_arr):
-    res = 1
-    edges = G.edges
-    for i in range(len(pix_arr)):
-        for j in range(len(pix_arr)):
-            if {pix_arr[i],pix_arr[j]} in edges:
-                res *= fi(pix_arr[i],pix_arr[j])
-    return res
-
-
-
-
-#--------------------------------------------------------------
 
 # begin:
 #if len(sys.argv)<2:
@@ -240,28 +227,41 @@ frame_width = 1
 outfile_name = "Result"
 img_path = "C:\\Users\\Yair Hadas\\Desktop\\שיטות מתקדמות בלמידה חישובית\\Adv-ML-HW\\HW2\\penguin-img.png"
 image = misc.imread(img_path)
+#x1,x2,y1,y2 = 91,95,12,17  #for test
 x1,x2,y1,y2 = 91,108,12,95
 image_segment = image[x1:x2,y1:y2] # currently a minimum of 1 pixel frame
 n,m = image_segment.shape
 # build grid:
-g = build_grid_graph(n,m,image_segment,0+frame_width, m-(frame_width+1), 0+frame_width, n-(frame_width+1))
+g = build_grid_graph(n,m,image_segment,0+frame_width, n-(frame_width+1), 0+frame_width, m-(frame_width+1))
 print("loaded image and made a grid from it successfully")
+
 # process grid:
-
-for i in range(1):
+for i in range(10):
     print("Started run no."+str(i+1))
-    print("Sending messages...")
-    for i in range(n*m):
-        print("now vertex-"+str(i)+" sends it's messages")
-        v = g.get_vertex(i)
-        for neigh in v._neighs:
-            v.snd_msg(neigh)
 
+    print("Sending messages...")
+    for j in range(n*m):
+        print("now vertex-"+str(j)+" receives it's messages")
+        v = g.get_vertex(j)
+        for neigh in v._neighs:
+            #if(i==0):
+            #    if(neigh._i == v._i-1 or neigh._i == v._i-m):
+            #        neigh.snd_msg(v)
+            #else:
+            neigh.snd_msg(v)
+        if (v._observed == False):
+            v.get_belief()
+            print("vertex-" + str(j) + " updated it's index value to: " + str(v._y))
+    '''
     print("Updating pixels values...")
-    for v in g.vertices():
+    for j in range(n*m):
+        v = g.get_vertex(j)
         if(v._observed == False):
             v.get_belief()
+            print("vertex-" + str(j) + " updated it's index value to: " + str(v._y))
     print("Finisheded run no." + str(i))
+    '''
+
 
 # convert grid to image:
 infered_img = grid2mat(g,n,m)
@@ -269,5 +269,5 @@ image_final = image
 image_final[x1:x2,y1:y2] = infered_img # plug the inferred values back to the original image
 # save result to output file
 #outfile_name = sys.argv[1]
-outfile_name  = "HW2\\Result"
+outfile_name  = "..\Result"
 misc.toimage(image_final).save(outfile_name+'.png')
