@@ -6,7 +6,7 @@ V_MAX = 50   #this is the threshold
 ITER_NO = 5
 #Since we implemented the log version of the algorithm it is unnecessary to take an exponent
 def fi(xi,xj):
-    res = -min(abs(xi-xj),V_MAX)
+    res = np.e**(-min(abs(xi-xj),V_MAX))
     return res
 
 #Here we create the matrix FI which contains all the possible values of the fi function
@@ -48,12 +48,12 @@ class Vertex(object):
         neighs_msgs = []
         for n in self._neighs:
             if (n != neigh and len(self._in_msgs[n]) > 0):
-                neighs_msgs.append(self._in_msgs[n])
+                neighs_msgs.append(np.log(self._in_msgs[n]))
         if(len(neigh._in_msgs[self])>0):
-            neighs_msgs.append(neigh._in_msgs[self])
+            neighs_msgs.append(np.log(neigh._in_msgs[self]))
 
         #calculate for each pixel value equation 2 result
-        results = FI[neigh_suggested_val] + np.sum(neighs_msgs, axis=0)
+        results = np.log(FI[neigh_suggested_val]) + np.sum(neighs_msgs, axis=0)
         return np.max(results)
 
     #For each possible neigh value calculate the message from self to neigh
@@ -72,8 +72,8 @@ class Vertex(object):
         if not (len(np.append([],list(self._in_msgs.values()))) > 0):
             return
         results = self.get_msgs(neigh)
-        res = results
-        neigh._in_msgs[self] = res
+        res = results - np.log(sum(np.e**results))
+        neigh._in_msgs[self] = np.e**res
 
     #recalculate the pixels after recieving the messages
     def get_belief(self):
@@ -262,5 +262,5 @@ image_final = image
 image_final[x1:x2,y1:y2] = infered_img # plug the inferred values back to the original image
 # save result to output file
 #outfile_name = sys.argv[1]
-outfile_name  = "..\Result-"+str(ITER_NO)
+outfile_name  = "..\Result-"+str(ITER_NO)+"_with_normalization"
 misc.toimage(image_final).save(outfile_name+'.png')
