@@ -9,8 +9,10 @@ for _ in range(1000):
 
 '''
 
+game0 = 'CartPole-v0'
+game1 = 'LunarLander-v2'
 import gym
-env = gym.make('CartPole-v0')
+env = gym.make(game1)
 for i_episode in range(20):
     observation = env.reset()
     for t in range(100):

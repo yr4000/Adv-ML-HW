@@ -1,5 +1,6 @@
-#using CNN to solve the same Mnist problem as in the first tutorial
+#using CNN to solve the same Mnist problem as in the first tutorial:
 
+#https://www.tensorflow.org/get_started/mnist/pros
 
 from __future__ import absolute_import
 from __future__ import division
@@ -43,7 +44,7 @@ def main(_):
 
   x_image = tf.reshape(x, [-1, 28, 28, 1])
 
-  #not sure what this is... I guess that another layer...
+  #not sure what this is. seems that this is part of the defenitions of the first layer... what exactly it does?
   h_conv1 = tf.nn.relu(conv2d(x_image, W_conv1) + b_conv1)
   h_pool1 = max_pool_2x2(h_conv1)
 
