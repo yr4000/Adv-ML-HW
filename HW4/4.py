@@ -7,12 +7,13 @@ Created on Mon May 15 23:11:02 2017
 """
 import gym
 import numpy as np
-import pickle as pickle
+import pickle as pkl
 import tensorflow as tf
 import matplotlib
 matplotlib.use('Qt4Agg')
 #matplotlib.use('Agg') #in order not to display the plot
 import matplotlib.pyplot as plt
+import os
 
 
 env_d = 'LunarLander-v2'
@@ -22,10 +23,13 @@ HIDDEN_NEURONS_NO = 15
 OUTPUT_SIZE = 4 #for lunar it should be size 4, for cartPole 2
 LAYERS_NO = 3
 VAR_NO = LAYERS_NO*2
-TOTAL_EPISODES = 10000
+TOTAL_EPISODES = 5000
 PERIOD = 5
 PLOT_PERIOD = 100
+SAVE_PERIOD = 100
 DO_NORMALIZE = False    #TODO: change the name...
+WEIGHTS_FILE = './lunar_weights.pkl'
+LOAD = False
 
 ENVIRONMENT = env_d
 env = gym.make(ENVIRONMENT)
@@ -113,8 +117,24 @@ train_step = tf.train.AdamOptimizer(1e-2).apply_gradients(zip(Gradients_holder,t
 5) need to understand also how exactly tf.gradients works, and if this corelates with what they asked.
 new:
 6) maybe i need to zero somethings like he does every once in a while?
+
+for tommorow:
+ - add decreasing factor gama to the prizes.
+ - check all the tips you got from friends
+ - take care of the crush where sum(pi)>1 (which crushes the multinomial function) by normalize it
+ - read instruction in HW again to check i did everything right
+ - don't forget we got more time
+ - check with the forum and facebook reasons for a drop in the preformance of the agent, or reasons why he doesn't always improve.
+ - if we have time - read scribes and try to improve more.
 '''
 
+
+#we assume here we get the array in the right order
+def decrese_rewards(rewards):
+    gama = 0.99
+    dec_arr = np.array([gama**t for t in range(len(rewards))])
+    res = np.multiply(rewards,dec_arr);
+    return res
 
 def get_empty_grads_sums():
     grads_sums = tf.trainable_variables()
@@ -125,7 +145,7 @@ def get_empty_grads_sums():
 init = tf.global_variables_initializer()
 def main(argv):
     rewards, states, actions_booleans = [], [], []
-    episode_number,total_reward,running_reward,reward_for_plot = 0,0,0,0
+    episode_number,total_reward,running_reward,reward_for_plot,save_reward = 0,0,0,0,None
     # TODO: for debug
     '''
     action_sum = np.array([[0.0,0.0]])
@@ -135,9 +155,27 @@ def main(argv):
     rewards_per_episode = [0 for i in range(TOTAL_EPISODES//PLOT_PERIOD)]
 
     with tf.Session() as sess:
-        sess.run(init)
+        saver = tf.train.Saver()
+        #check if file is not empty
+        if(os.path.isfile(WEIGHTS_FILE) and LOAD):
+            #f = open(WEIGHTS_FILE,'rb')
+            #r1 = sess.run(tvars)
+            saver.restore(sess,WEIGHTS_FILE)
+            #zip(sess.run(tvars),pkl.load(f))
+            r2 = sess.run(tvars)
+            #f.close()
+            print("loaded weights successfully!")
+        else:
+            sess.run(init)
+
+        #creates file if it doesn't exisits:
+        if(not os.path.isfile(WEIGHTS_FILE)):
+            open(WEIGHTS_FILE,'a').close()
+            print("created file sucessfully!")
+
         obsrv = env.reset() # Obtain an initial observation of the environment
         grads_sums = get_empty_grads_sums()
+
 
         while episode_number <= TOTAL_EPISODES:
             #append relevant observation to action to states
@@ -168,7 +206,7 @@ def main(argv):
                 #create the rewards sums array and reverse again
                 rewards_sums = np.cumsum(rewards[::-1]);
                 #normalize prizes and reverse
-                rewards_sums = np.divide(rewards_sums[::-1],np.sum(rewards_sums))
+                rewards_sums = decrese_rewards(np.divide(rewards_sums[::-1],np.sum(rewards_sums)))
                 modified_rewards_sums = np.reshape(rewards_sums, [1, len(rewards_sums)])
                 #modify actions_booleans to be an array of booleans
                 debug_ab = actions_booleans
@@ -187,6 +225,16 @@ def main(argv):
                 total_reward += sum(rewards)
                 reward_for_plot += sum(rewards)
                 running_reward = total_reward if running_reward ==0 else running_reward * 0.99 + total_reward * 0.01
+
+                if(episode_number%SAVE_PERIOD==0):
+                    if(save_reward is None or save_reward<(reward_for_plot/ SAVE_PERIOD)):
+                        save_reward = (reward_for_plot/ SAVE_PERIOD)
+                        saver.save(sess,WEIGHTS_FILE)
+                        #save with shmickle
+                        #f = open(WEIGHTS_FILE,'wb')
+                        #pkl.dump(sess.run(tvars),f)
+                        #f.close()
+                        print('saved file successfully!')
 
                 if(episode_number%PERIOD==0):
                     # take the train step
