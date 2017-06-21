@@ -23,8 +23,9 @@ HIDDEN_NEURONS_NO = 15
 OUTPUT_SIZE = 4 #for lunar it should be size 4, for cartPole 2
 LAYERS_NO = 3
 VAR_NO = LAYERS_NO*2
+LEARNING_RATE = 1e-2
 TOTAL_EPISODES = 5000
-PERIOD = 5
+PERIOD = 10
 PLOT_PERIOD = 100
 SAVE_PERIOD = 100
 DO_NORMALIZE = False    #TODO: change the name...
@@ -41,47 +42,42 @@ env.reset()
        #notice it can be a matrix or a vector
 #y = agent(observations)     #TODO: right now y = 0 becaue that's what the function returns... do i really want to do it in a function? i can tale the rest of the code after the y out.
 
+def InitializeVarXavier(var_name,var_shape):
+    return tf.get_variable(name=var_name, shape=var_shape,
+                    initializer=tf.contrib.layers.xavier_initializer())
+
+def InitializeVarRandomNormal(var_name,var_shape):
+    return tf.Variable(tf.random_normal(var_shape))
+
+#TODO: delete this copy shit later
+
+'''
+def weight_variable(name, shape):
+  initial = tf.truncated_normal(shape, stddev=0.1, dtype=tf.float32)
+  return tf.get_variable(name, initializer=initial, dtype=tf.float32)
+
+def bias_variable(name, shape):
+  initial = tf.constant(0.1, shape=shape, dtype=tf.float32)
+  return tf.get_variable(name, initializer=initial, dtype=tf.float32)
+
+'''
+
+#here we choose how to initialize
+initializeW = InitializeVarXavier
+initializeb = InitializeVarXavier
+
+
 # Defining the agent
 # placeholder for the input
 observations = tf.placeholder(tf.float32, [None, INPUT_SIZE])
+W1 = initializeW("W1",[INPUT_SIZE, HIDDEN_NEURONS_NO])
+b1 = initializeb("b1",[HIDDEN_NEURONS_NO])
+if (LAYERS_NO == 3):
+    W2 = initializeW("W2",[HIDDEN_NEURONS_NO, HIDDEN_NEURONS_NO])
+    b2 = initializeb("b2",[HIDDEN_NEURONS_NO])
+W3 = initializeW("W3",[HIDDEN_NEURONS_NO, OUTPUT_SIZE])
+b3 = initializeb("b3",[OUTPUT_SIZE])
 
-if(not DO_NORMALIZE):
-    # first layer:
-    # define weights 8xHIDDEN_NEURONS_NO
-    W1 = tf.get_variable(name="W1", shape=[INPUT_SIZE, HIDDEN_NEURONS_NO],
-                         initializer=tf.contrib.layers.xavier_initializer())
-    # define bias
-    b1 = tf.get_variable(name="b1", shape=[HIDDEN_NEURONS_NO], initializer=tf.contrib.layers.xavier_initializer())
-
-    if(LAYERS_NO == 3):
-        # second layer:
-        W2 = tf.get_variable(name="W2", shape=[HIDDEN_NEURONS_NO, HIDDEN_NEURONS_NO],
-                             initializer=tf.contrib.layers.xavier_initializer())
-        b2 = tf.get_variable(name="b2", shape=[HIDDEN_NEURONS_NO], initializer=tf.contrib.layers.xavier_initializer())
-
-    # third layer (output layer):
-    W3 = tf.get_variable(name="W3", shape=[HIDDEN_NEURONS_NO, OUTPUT_SIZE],
-                         initializer=tf.contrib.layers.xavier_initializer())
-    b3 = tf.get_variable(name="b3", shape=[OUTPUT_SIZE], initializer=tf.contrib.layers.xavier_initializer())
-
-else:
-    # Defining the agent
-    #placeholder for the input
-    observations = tf.placeholder(tf.float32, [None, INPUT_SIZE])
-    # first layer:
-    # define weights 8xHIDDEN_NEURONS_NO
-    W1 = tf.Variable(tf.random_normal([INPUT_SIZE, HIDDEN_NEURONS_NO]))
-    # define bias
-    b1 = tf.Variable(tf.random_normal([HIDDEN_NEURONS_NO]))
-
-    if(LAYERS_NO == 3):
-        # second layer:
-        W2 = tf.Variable(tf.random_normal([HIDDEN_NEURONS_NO, HIDDEN_NEURONS_NO]))
-        b2 = tf.Variable(tf.random_normal([HIDDEN_NEURONS_NO]))
-
-    # third layer (output layer):
-    W3 = tf.Variable(tf.random_normal([HIDDEN_NEURONS_NO, OUTPUT_SIZE]))
-    b3 = tf.Variable(tf.random_normal([OUTPUT_SIZE]))
 
 #first,second and third layer computations
 h1 = tf.nn.tanh(tf.matmul(observations, W1) + b1)
@@ -105,27 +101,31 @@ Gradients = tf.gradients(grad_step,tvars)
 
 Gradients_holder = [tf.placeholder(tf.float32) for i in range(VAR_NO) ]
 # then train the network - for each of the parameters do the GD as described in the HW.
-train_step = tf.train.AdamOptimizer(1e-2).apply_gradients(zip(Gradients_holder,tvars))
+train_step = tf.train.AdamOptimizer(LEARNING_RATE).apply_gradients(zip(Gradients_holder,tvars))
 #train_step = tf.train.AdamOptimizer(1e-2).minimize(grad_step)
 
 #TODO: answer the following questions:
 '''
-1) How exactly do i get the correct gradient? and how do i use apply_gradients with them?
-2) maybe i should run this guys code and see if i can learn something about the functions nature
-3) I really should understand how exactly the adam optimiser works...
-4) compare between how you took the gradient step to his (what is reduce_mean exactly?)
-5) need to understand also how exactly tf.gradients works, and if this corelates with what they asked.
 new:
 6) maybe i need to zero somethings like he does every once in a while?
 
 for tommorow:
- - add decreasing factor gama to the prizes.
- - check all the tips you got from friends
  - take care of the crush where sum(pi)>1 (which crushes the multinomial function) by normalize it
- - read instruction in HW again to check i did everything right
  - don't forget we got more time
- - check with the forum and facebook reasons for a drop in the preformance of the agent, or reasons why he doesn't always improve.
- - if we have time - read scribes and try to improve more.
+
+things i tried:
+ - change the way i initialize
+
+things i didn't try:
+ - reduce mean
+ - change the way i normalize
+ - change the reduce-prize function
+ - change the way i process the rewards
+
+things to check tommorow:
+ - why Aran entered minus sum to the gradient function?
+ - this code that solves the problem: https://gym.openai.com/evaluations/eval_FbKq5MxAS9GlvB7W6ioJkg
+ - other solutions: https://gym.openai.com/envs/LunarLander-v2
 '''
 
 
@@ -207,6 +207,7 @@ def main(argv):
                 rewards_sums = np.cumsum(rewards[::-1]);
                 #normalize prizes and reverse
                 rewards_sums = decrese_rewards(np.divide(rewards_sums[::-1],np.sum(rewards_sums)))
+                #rewards_sums = np.divide(rewards_sums[::-1], np.sum(rewards_sums))
                 modified_rewards_sums = np.reshape(rewards_sums, [1, len(rewards_sums)])
                 #modify actions_booleans to be an array of booleans
                 debug_ab = actions_booleans
