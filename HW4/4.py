@@ -95,9 +95,9 @@ rewards_arr = tf.placeholder(tf.float32, [1,None])
 actions_mask = tf.placeholder(tf.bool, [None, OUTPUT_SIZE])
 filtered_actions = tf.boolean_mask(y, actions_mask)  # should return a T size vector with correct (chosen) action values
 pi = tf.log(filtered_actions)
-#grad = tf.reduce_sum(tf.scalar_mul(1 // tf.size(pi), tf.multiply(pi,rewards_arr)))
-grad_step = tf.divide(tf.reduce_sum(tf.multiply(pi,rewards_arr)),tf.to_float(tf.size(pi)))
-Gradients = tf.gradients(grad_step,tvars)
+#grad_step = tf.divide(tf.reduce_sum(tf.multiply(pi,rewards_arr)),tf.to_float(tf.size(pi)))         #TODO: devide by T
+grad_step = tf.reduce_sum(tf.multiply(pi,rewards_arr))      #TODO: don't devide by T
+Gradients = tf.gradients(-grad_step,tvars)
 
 Gradients_holder = [tf.placeholder(tf.float32) for i in range(VAR_NO) ]
 # then train the network - for each of the parameters do the GD as described in the HW.
@@ -132,7 +132,7 @@ things to check tommorow:
 #we assume here we get the array in the right order
 def decrese_rewards(rewards):
     gama = 0.99
-    dec_arr = np.array([gama**t for t in range(len(rewards))])
+    dec_arr = np.array([gama**(len(rewards)-t) for t in range(len(rewards))])
     res = np.multiply(rewards,dec_arr);
     return res
 
@@ -146,6 +146,7 @@ init = tf.global_variables_initializer()
 def main(argv):
     rewards, states, actions_booleans = [], [], []
     episode_number,total_reward,running_reward,reward_for_plot,save_reward = 0,0,0,0,None
+    steps = 0
     # TODO: for debug
     '''
     action_sum = np.array([[0.0,0.0]])
@@ -186,11 +187,13 @@ def main(argv):
             th1 = sess.run(h1,feed_dict={observations: modified_obsrv})
             th2 = sess.run(h2,feed_dict={observations: modified_obsrv})
             th3 = sess.run(y,feed_dict={observations: modified_obsrv})
-            action_probs_arr.append(action_probs)
+
             '''
+
             # Run the policy network and get a distribution over actions
             action_probs = sess.run(y,feed_dict={observations: modified_obsrv})
             actions_booleans.append(np.random.multinomial(1, action_probs[0]))
+
             '''
             if(ENVIRONMENT == cart_pole_env):
                 action = 0 if action_probs[[0]] < 0.5 else 1
@@ -202,15 +205,19 @@ def main(argv):
             #add reward to rewards and obsrv to states
             rewards.append(reward)
             #action_sum += np.array(action_probs)
+            steps += 1
             if done:
                 #create the rewards sums array and reverse again
                 rewards_sums = np.cumsum(rewards[::-1]);
                 #normalize prizes and reverse
-                rewards_sums = decrese_rewards(np.divide(rewards_sums[::-1],np.sum(rewards_sums)))
-                #rewards_sums = np.divide(rewards_sums[::-1], np.sum(rewards_sums))
+                rewards_sums = decrese_rewards(rewards_sums[::-1])
+                rewards_sums -= np.mean(rewards_sums)
+                #rewards_sums = np.divide(rewards_sums, np.sum(rewards_sums))
+                #rewards_sums = decrese_rewards(np.divide(rewards_sums[::-1],np.sum(rewards_sums)))
+                rewards_sums = np.divide(rewards_sums, np.std(rewards_sums))
                 modified_rewards_sums = np.reshape(rewards_sums, [1, len(rewards_sums)])
                 #modify actions_booleans to be an array of booleans
-                debug_ab = actions_booleans
+                #debug_ab = actions_booleans
                 actions_booleans = np.array(actions_booleans)
                 actions_booleans = actions_booleans == 1
                 #gradients for check.
@@ -220,7 +227,14 @@ def main(argv):
                 fa = sess.run(filtered_actions, feed_dict={observations: states,actions_mask:actions_booleans,rewards_arr: modified_rewards_sums })
                 pi_debug = sess.run(pi, feed_dict={observations: states,actions_mask:actions_booleans,rewards_arr: modified_rewards_sums })
                 loss_debug = sess.run(grad_step, feed_dict={observations: states,actions_mask:actions_booleans,rewards_arr: modified_rewards_sums })
+                th3 = sess.run(y, feed_dict={observations: states})
+                filt_act = sess.run(filtered_actions, feed_dict={observations: states,actions_mask:actions_booleans,rewards_arr: modified_rewards_sums })
+                action_probs_arr = np.array(action_probs_arr)
+                is_equal = np.add(th3, -action_probs_arr)
+                s_is_equal = sum(sum(is_equal))
+
                 '''
+
                 grads = sess.run(Gradients, feed_dict={observations: states,actions_mask:actions_booleans,rewards_arr: modified_rewards_sums })
                 grads_sums += np.array(grads)
                 total_reward += sum(rewards)
@@ -240,8 +254,8 @@ def main(argv):
                 if(episode_number%PERIOD==0):
                     # take the train step
                     sess.run(train_step, feed_dict={Gradients_holder[i]: grads_sums[i] for i in range(VAR_NO)})
-                    print ('Episode No. %f.  Total average reward %f.' % (episode_number, total_reward / PERIOD))
-                    print('Average reward for episode %f.  Total average reward %f.' % (total_reward / PERIOD, running_reward / PERIOD))
+                    print ('Episode No. %f., Steps No. %d,   Episodes average reward %f., Total average reward %f.' % (episode_number, steps, total_reward / PERIOD, running_reward / PERIOD))
+                    #print('Average reward for episode %f.  Total average reward %f.' % (total_reward / PERIOD, running_reward / PERIOD))
                     #print("actions_sum = ", action_sum)
                     total_reward = 0
                     grads_sums = get_empty_grads_sums()
@@ -254,6 +268,7 @@ def main(argv):
                 # TODO: for debug
                 #action_probs_arr = []
                 obsrv = env.reset()
+                steps = 0
 
     IS_NORMALIZED = ""
     if(DO_NORMALIZE):
