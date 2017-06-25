@@ -24,18 +24,24 @@ HIDDEN_NEURONS_NO = 15
 OUTPUT_SIZE = 4 #for lunar it should be size 4, for cartPole 2
 LAYERS_NO = 3
 VAR_NO = LAYERS_NO*2
-LEARNING_RATE = 1e-4
-TOTAL_EPISODES = 100
+#LEARNING_RATE = 1e-2
+TOTAL_EPISODES = 6000
 PERIOD = 10
 PLOT_PERIOD = 100
 SAVE_PERIOD = 100
 DO_NORMALIZE = False
-LOAD = True
-SAVE = False
+LOAD = False
+SAVE = True
 
 ENVIRONMENT = env_d
 #WEIGHTS_FILE = './'+ENVIRONMENT+'_weights.pkl'
-WEIGHTS_FILE = 'ws.p'
+if(DO_NORMALIZE):
+    WEIGHTS_FILE = 'n-ws.p'
+    BEST_WEIGHTS = 'n-bws.p'
+else:
+    WEIGHTS_FILE = 'ws.p'
+    BEST_WEIGHTS = 'bws.p'
+
 env = gym.make(ENVIRONMENT)
 env.reset()
 
@@ -46,37 +52,28 @@ def InitializeVarXavier(var_name,var_shape):
                     initializer=tf.contrib.layers.xavier_initializer())
 
 def InitializeVarRandomNormal(var_name,var_shape):
-    return tf.Variable(tf.random_normal(var_shape), dtype=tf.float32)
+    return tf.Variable(tf.random_normal(var_shape, stddev = 0.1), dtype=tf.float32)
 
-#TODO: delete this copy shit later
-
-'''
-def weight_variable(name, shape):
-  initial = tf.truncated_normal(shape, stddev=0.1, dtype=tf.float32)
-  return tf.get_variable(name, initializer=initial, dtype=tf.float32)
-
-def bias_variable(name, shape):
-  initial = tf.constant(0.1, shape=shape, dtype=tf.float32)
-  return tf.get_variable(name, initializer=initial, dtype=tf.float32)
-
-'''
 
 #TODO: in case I use the same initializer, delete one
 #here we choose how to initialize
-initializeW = InitializeVarXavier
-initializeb = InitializeVarXavier
+if(DO_NORMALIZE):
+    print("Running at normalized mode.")
+    initialize = InitializeVarRandomNormal
+else:
+    initialize = InitializeVarXavier
 
 
 # Defining the agent
 # placeholder for the input
 observations = tf.placeholder(tf.float32, [None, INPUT_SIZE])
-W1 = initializeW("W1",[INPUT_SIZE, HIDDEN_NEURONS_NO])
-b1 = initializeb("b1",[HIDDEN_NEURONS_NO])
+W1 = initialize("W1",[INPUT_SIZE, HIDDEN_NEURONS_NO])
+b1 = initialize("b1",[HIDDEN_NEURONS_NO])
 if (LAYERS_NO == 3):
-    W2 = initializeW("W2",[HIDDEN_NEURONS_NO, HIDDEN_NEURONS_NO])
-    b2 = initializeb("b2",[HIDDEN_NEURONS_NO])
-W3 = initializeW("W3",[HIDDEN_NEURONS_NO, OUTPUT_SIZE])
-b3 = initializeb("b3",[OUTPUT_SIZE])
+    W2 = initialize("W2",[HIDDEN_NEURONS_NO, HIDDEN_NEURONS_NO])
+    b2 = initialize("b2",[HIDDEN_NEURONS_NO])
+W3 = initialize("W3",[HIDDEN_NEURONS_NO, OUTPUT_SIZE])
+b3 = initialize("b3",[OUTPUT_SIZE])
 
 
 #first,second and third layer computations
@@ -103,26 +100,12 @@ Gradients = tf.gradients(-loss,tvars)
 
 Gradients_holder = [tf.placeholder(tf.float32) for i in range(VAR_NO)]
 # then train the network - for each of the parameters do the GD as described in the HW.
-train_step = tf.train.AdamOptimizer(LEARNING_RATE).apply_gradients(zip(Gradients_holder,tvars))
-
-#TODO: answer the following questions:
-'''
-for tommorow:
- - take care of the crush where sum(pi)>1 (which crushes the multinomial function) by normalize it
-
-things i tried:
- - change the way i initialize
-things to check tommorow:
- - why Aran entered minus sum to the gradient function?
- - this code that solves the problem: https://gym.openai.com/evaluations/eval_FbKq5MxAS9GlvB7W6ioJkg
- - other solutions: https://gym.openai.com/envs/LunarLander-v2
-'''
+learning_rate = tf.placeholder(tf.float32, shape=[])
+train_step = tf.train.AdamOptimizer(learning_rate).apply_gradients(zip(Gradients_holder,tvars))
 
 #TODO: what's left?
 '''
 1) finish clean code
-2) check for a better initializer
-3) look up softmax parameters
 4) check on nova
 5) submit the HM
 '''
@@ -163,7 +146,7 @@ def pick_random_action_manually(actions):
 init = tf.global_variables_initializer()
 def main(argv):
     rewards, states, actions_booleans = [], [], []
-    episode_number,period_reward,running_reward,reward_for_plot,save_reward = 0,0,0,0,None
+    episode_number,period_reward,running_reward,reward_for_plot,save_reward,previous_period_reward = 0,0,0,0,None,None
     steps = 0
     manual_prob_use = 0             #TODO: for debug
     #for plotting:
@@ -181,7 +164,7 @@ def main(argv):
             saver.restore(sess,WEIGHTS_FILE)
             '''
             #Load with shmickle
-            f = open(WEIGHTS_FILE,'rb')
+            f = open(WEIGHTS_FILE,'rb')     #BEST_WEIGHTS
             for var, val in zip(tvars,pkl.load(f)):
                 sess.run(tf.assign(var,val))
             f.close()
@@ -190,6 +173,8 @@ def main(argv):
         #creates file if it doesn't exisits:
         if(not os.path.isfile(WEIGHTS_FILE)):
             open(WEIGHTS_FILE,'a').close()
+        if(not os.path.isfile(BEST_WEIGHTS)):
+            open(BEST_WEIGHTS, 'a').close()
             print("created file sucessfully!")
 
         obsrv = env.reset() # Obtain an initial observation of the environment
@@ -252,19 +237,36 @@ def main(argv):
                         #saver.save(sess,WEIGHTS_FILE)
                         '''
                         #save with shmickle
-                        f = open(WEIGHTS_FILE,'wb')
+                        f = open(BEST_WEIGHTS,'wb')
                         pkl.dump(sess.run(tvars),f)
                         f.close()
-                        print('Saved file successfully!')
+                        print('Saved best weights successfully!')
                         print('Current best result for %d episodes: %f.' %(PLOT_PERIOD,reward_for_plot/ PLOT_PERIOD))
+                    #manual save
+                    f = open(WEIGHTS_FILE, 'wb')
+                    pkl.dump(sess.run(tvars), f)
+                    f.close()
+                    print('auto-saved weights successfully.')
 
                 #Do the training step
                 if(episode_number%PERIOD==0):
                     running_reward += period_reward / PERIOD
-                    # take the train step
-                    sess.run(train_step, feed_dict={Gradients_holder[i]: grads_sums[i] for i in range(VAR_NO)})
+
+                    #choose learning rate:
+                    grad_dict = {Gradients_holder[i]: grads_sums[i] for i in range(VAR_NO)}
+                    if(previous_period_reward is None or period_reward / PERIOD > previous_period_reward):
+                        grad_dict.update({learning_rate: 1e-2})
+                        print("Learning rate is now 1e-2")
+                    else:
+                        grad_dict.update({learning_rate: 1e-4})
+                        print("Learning rate is now 1e-4")
+
+                    #take the train step
+                    sess.run(train_step, feed_dict=grad_dict)
+
                     print ('Episode No. %d, Steps No. %d,   Episodes average reward %f., Total average reward %f.' % (episode_number, steps, period_reward / PERIOD, running_reward / (episode_number//PERIOD)))
                     print('Amount of manually drawing this period: %d' %(manual_prob_use))
+                    previous_period_reward = period_reward / PERIOD
                     period_reward = 0
                     manual_prob_use = 0
                     grads_sums = get_empty_grads_sums()
