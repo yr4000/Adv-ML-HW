@@ -25,13 +25,13 @@ OUTPUT_SIZE = 4 #for lunar it should be size 4, for cartPole 2
 LAYERS_NO = 3
 VAR_NO = LAYERS_NO*2
 #LEARNING_RATE = 1e-2
-TOTAL_EPISODES = 6000
+TOTAL_EPISODES = 50
 PERIOD = 10
 PLOT_PERIOD = 100
 SAVE_PERIOD = 100
-DO_NORMALIZE = False
-LOAD = False
-SAVE = True
+DO_NORMALIZE = True
+LOAD = True
+SAVE = False
 
 ENVIRONMENT = env_d
 #WEIGHTS_FILE = './'+ENVIRONMENT+'_weights.pkl'
@@ -54,8 +54,6 @@ def InitializeVarXavier(var_name,var_shape):
 def InitializeVarRandomNormal(var_name,var_shape):
     return tf.Variable(tf.random_normal(var_shape, stddev = 0.1), dtype=tf.float32)
 
-
-#TODO: in case I use the same initializer, delete one
 #here we choose how to initialize
 if(DO_NORMALIZE):
     print("Running at normalized mode.")
@@ -75,7 +73,6 @@ if (LAYERS_NO == 3):
 W3 = initialize("W3",[HIDDEN_NEURONS_NO, OUTPUT_SIZE])
 b3 = initialize("b3",[OUTPUT_SIZE])
 
-
 #first,second and third layer computations
 h1 = tf.nn.tanh(tf.matmul(observations, W1) + b1)
 if (LAYERS_NO == 3):
@@ -87,9 +84,9 @@ else:
 tvars = tf.trainable_variables()
 # rewards sums from k=t to T:
 rewards_arr = tf.placeholder(tf.float32, [1,None])
-# actions - a mask matrix which filters ys result accordint to the actions that were chosen. see boolean mask here: https://www.tensorflow.org/versions/r0.11/api_docs/python/array_ops/slicing_and_joining#boolean_mask
+# actions - a mask matrix which filters ys result accordint to the actions that were chosen.
 actions_mask = tf.placeholder(tf.bool, [None, OUTPUT_SIZE])
-# should return a T size vector with correct (chosen) action values
+# return a T size vector with correct (chosen) action values
 filtered_actions = tf.boolean_mask(y, actions_mask)
 pi = tf.log(filtered_actions)
 #devide by T
@@ -102,14 +99,6 @@ Gradients_holder = [tf.placeholder(tf.float32) for i in range(VAR_NO)]
 # then train the network - for each of the parameters do the GD as described in the HW.
 learning_rate = tf.placeholder(tf.float32, shape=[])
 train_step = tf.train.AdamOptimizer(learning_rate).apply_gradients(zip(Gradients_holder,tvars))
-
-#TODO: what's left?
-'''
-1) finish clean code
-4) check on nova
-5) submit the HM
-'''
-
 
 #we assume here we get the array in the right order, so each sum is indeed being multiply with the right factor
 def decrese_rewards(rewards):
@@ -148,7 +137,7 @@ def main(argv):
     rewards, states, actions_booleans = [], [], []
     episode_number,period_reward,running_reward,reward_for_plot,save_reward,previous_period_reward = 0,0,0,0,None,None
     steps = 0
-    manual_prob_use = 0             #TODO: for debug
+    manual_prob_use = 0             #for debug
     #for plotting:
     rewards_per_episode = [0 for i in range(TOTAL_EPISODES//PLOT_PERIOD)]
 
@@ -164,7 +153,7 @@ def main(argv):
             saver.restore(sess,WEIGHTS_FILE)
             '''
             #Load with shmickle
-            f = open(WEIGHTS_FILE,'rb')     #BEST_WEIGHTS
+            f = open(BEST_WEIGHTS,'rb')     #BEST_WEIGHTS
             for var, val in zip(tvars,pkl.load(f)):
                 sess.run(tf.assign(var,val))
             f.close()
@@ -180,7 +169,9 @@ def main(argv):
         obsrv = env.reset() # Obtain an initial observation of the environment
         grads_sums = get_empty_grads_sums()     #initialize the gradients holder for the trainable variables
 
-        while (episode_number <= TOTAL_EPISODES) or (reward_for_plot/PLOT_PERIOD > 200):
+        while (episode_number <= TOTAL_EPISODES): #or (reward_for_plot/PLOT_PERIOD > 200):
+            #env.render()
+
             #append the relevant observation to folloeing action, to states
             states.append(obsrv)
             #modify the observation to the model
@@ -191,11 +182,6 @@ def main(argv):
             try:
                 m_actions = np.random.multinomial(1, action_probs[0])
             except:
-                '''
-                print("you are a worthless piece of shit: "+str(simple_normalize_vector(action_probs[0])))
-                print("that's it's sum: "+str(sum(simple_normalize_vector(action_probs[0]))))
-                raise BaseException("bye-bye fuckers!")
-                '''
                 m_actions = pick_random_action_manually(action_probs[0])
                 manual_prob_use += 1
             # Saves the selected action for a later use
@@ -225,7 +211,6 @@ def main(argv):
                 #reward counters for printing and plotting.
                 period_reward += sum(rewards)
                 reward_for_plot += sum(rewards)
-                #running_reward = period_reward if running_reward ==0 else running_reward * 0.99 + period_reward * 0.01     #TODO: delete
 
                 episode_number += 1
                 #saves the best weights:
@@ -256,16 +241,16 @@ def main(argv):
                     grad_dict = {Gradients_holder[i]: grads_sums[i] for i in range(VAR_NO)}
                     if(previous_period_reward is None or period_reward / PERIOD > previous_period_reward):
                         grad_dict.update({learning_rate: 1e-2})
-                        print("Learning rate is now 1e-2")
+                        #print("Learning rate is now 1e-2")
                     else:
                         grad_dict.update({learning_rate: 1e-4})
-                        print("Learning rate is now 1e-4")
+                        #print("Learning rate is now 1e-4")
 
                     #take the train step
                     sess.run(train_step, feed_dict=grad_dict)
 
                     print ('Episode No. %d, Steps No. %d,   Episodes average reward %f., Total average reward %f.' % (episode_number, steps, period_reward / PERIOD, running_reward / (episode_number//PERIOD)))
-                    print('Amount of manually drawing this period: %d' %(manual_prob_use))
+                    #print('Amount of manually drawing this period: %d' %(manual_prob_use))
                     previous_period_reward = period_reward / PERIOD
                     period_reward = 0
                     manual_prob_use = 0
